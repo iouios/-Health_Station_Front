@@ -12,6 +12,7 @@ import Paper from "@mui/material/Paper";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import lifesaversHand from "../../../assets/lifesaversHand.png";
+import * as Yup from "yup";
 interface Data {
   id: number;
   firstname: string;
@@ -27,6 +28,7 @@ interface ProfileData {
   lastname: string;
   rolename: string;
   phone: string;
+  password: string;
 }
 
 interface StatusMaster {
@@ -40,6 +42,34 @@ interface StatusMaster {
 interface ApiResponse {
   countallMaster: number;
 }
+
+interface Errors {
+  username?: string;
+  password?: string;
+  firstname?: string;
+  lastname?: string;
+  rolename?: string;
+  phone?: string;
+  general?: string;
+}
+
+const validationSchema = Yup.object().shape({
+  username: Yup.string().required("กรุณากรอกชื่อผู้ใช้งาน*"),
+  password: Yup.string()
+    .required("กรุณากรอกรหัสผ่าน")
+    .min(5, "รหัสผ่านต้องมีความยาวอย่างน้อย 5 ตัวอักษร")
+    .matches(/[a-z]/, "รหัสผ่านต้องมีตัวอักษรพิมพ์เล็กอย่างน้อยหนึ่งตัว (a-z)")
+    .matches(/[A-Z]/, "รหัสผ่านต้องมีตัวอักษรพิมพ์ใหญ่อย่างน้อยหนึ่งตัว (A-Z)")
+    .matches(/[0-9]/, "รหัสผ่านต้องมีตัวเลขอย่างน้อยหนึ่งตัว (0-9)"),
+  firstname: Yup.string().required("กรุณากรอกชื่อ"),
+  lastname: Yup.string().required("กรุณากรอกนามสกุล"),
+  rolename: Yup.string()
+    .oneOf(["เจ้าหน้าที่", "อสม"], "กรุณาเลือกบทบาท")
+    .required("กรุณาเลือกบทบาท"),
+  phone: Yup.string()
+    .required("กรุณากรอกเบอร์โทรศัพท์")
+    .min(10, "เบอร์โทรต้องมี 10 ตัว"),
+});
 
 const Profile: React.FC = () => {
   const [data, setData] = useState<Data[]>([]);
@@ -55,6 +85,7 @@ const Profile: React.FC = () => {
   const [finalResult, setFinalResult] = useState<Data[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [countallMaster, setCountallMaster] = useState<number | null>(null);
+  const [errors, setErrors] = useState<Errors>({});
   useEffect(() => {
     if (searchQuerys === "") {
       setFinalResult(data);
@@ -166,8 +197,14 @@ const Profile: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editValue && editValue[0]) {
-      try {
+
+    try {
+      // Check if editValue is not null or undefined
+      if (editValue && editValue.length > 0) {
+        // Validate the input before submission
+        await validationSchema.validate(editValue[0], { abortEarly: false });
+
+        // Determine whether to use PUT based on editValue
         const response = await axios.put(
           `http://localhost:9999/api/users/editProfile/${userId}`,
           {
@@ -180,15 +217,48 @@ const Profile: React.FC = () => {
             },
           }
         );
+
+        // Check if the response is successful
         if (response.status === 200) {
           console.log("Form Submitted", editValue);
-          window.location.href = "http://localhost:3000/admin/Proflile";
+          setErrors({});
+          window.location.href = "http://localhost:3000/admin/adminProflile";
         }
-      } catch (err) {
-        setError("Failed to save statusMaster");
+      } else {
+        // Handle the case where editValue is null or empty
+        setErrors({ general: "No data to submit." });
       }
-    } else {
-      setError("editvalue not updated");
+    } catch (error) {
+      const newErrors: Errors = {};
+
+      // Handle validation errors
+      if (error instanceof Yup.ValidationError) {
+        error.inner.forEach((err) => {
+          if (err.path) newErrors[err.path as keyof Errors] = err.message;
+        });
+      }
+      // Handle API errors
+      else if (axios.isAxiosError(error)) {
+        if (error.response) {
+          console.error("API error:", error.response.data);
+          const apiErrors = error.response.data.errors;
+          if (apiErrors) {
+            Object.keys(apiErrors).forEach((key) => {
+              newErrors[key as keyof Errors] = apiErrors[key];
+            });
+          }
+        } else if (error.request) {
+          console.error("API error: No response received");
+        } else {
+          console.error("API error:", error.message);
+        }
+      }
+      // Handle unexpected errors
+      else {
+        console.error("Unexpected error:", error);
+      }
+
+      setErrors(newErrors);
     }
   };
 
@@ -220,7 +290,7 @@ const Profile: React.FC = () => {
     setEditValue(profileData);
   }, [profileData]);
 
-  console.log(editValue)
+  console.log(editValue);
 
   return (
     <div className="h-screen">
@@ -325,32 +395,70 @@ const Profile: React.FC = () => {
                                   บันทึก
                                 </button>
                               </div>
-                              <div className="p-2 text-start">
-                                ชื่อผู้ใช้งาน
+                            </div>
+                            <div className="grid grid-cols-2">
+                              <div>
+                                <div className="p-2 text-start">
+                                  ชื่อผู้ใช้งาน
+                                </div>
+                                <div className="p-2">
+                                  <input
+                                    type="text"
+                                    name="username"
+                                    id=""
+                                    className="border-2 border-b-4 flex-1 text-left p-2 bg-gray-100 w-full"
+                                    value={editValue?.[0]?.username || ""} // Optional chaining to avoid errors
+                                    onChange={(e) => {
+                                      // Ensure you're updating the correct object in the array
+                                      setEditValue((prevState) => {
+                                        if (!prevState) return prevState; // Handle null case
+
+                                        const updatedProfile = [...prevState]; // Clone the previous state array
+                                        updatedProfile[0] = {
+                                          // Assume you're updating the first profile object
+                                          ...updatedProfile[0],
+                                          username: e.target.value, // Update the username field
+                                        };
+
+                                        return updatedProfile; // Return the updated array
+                                      });
+                                    }}
+                                  />
+                                </div>
+                                {errors.username && (
+                                  <div className="text-red-500 text-sm mt-1">
+                                    {errors.username}
+                                  </div>
+                                )}
                               </div>
-                              <div className="p-2">
-                                <input
-                                  type="text"
-                                  name="username"
-                                  id=""
-                                  className="border-2 border-b-4 flex-1 text-left p-2 bg-gray-100 w-full"
-                                  value={editValue?.[0]?.username || ""} // Optional chaining to avoid errors
-                                  onChange={(e) => {
-                                    // Ensure you're updating the correct object in the array
-                                    setEditValue((prevState) => {
-                                      if (!prevState) return prevState; // Handle null case
+                              <div className="flex flex-col">
+                                <div className="p-2 text-start">รหัสผ่าน</div>
+                                <div className="p-2">
+                                  <input
+                                    type="password" // Changed input type to password for security
+                                    name="password"
+                                    className="border-2 border-b-4 flex-1 text-left p-2 bg-gray-100 w-full"
+                                    value={editValue?.[0]?.password || ""} // Optional chaining and fallback for undefined value
+                                    onChange={(e) => {
+                                      setEditValue((prevState) => {
+                                        if (!prevState) return prevState; // Handle null/undefined case
 
-                                      const updatedProfile = [...prevState]; // Clone the previous state array
-                                      updatedProfile[0] = {
-                                        // Assume you're updating the first profile object
-                                        ...updatedProfile[0],
-                                        username: e.target.value, // Update the username field
-                                      };
+                                        const updatedProfile = [...prevState]; // Clone the previous state array
+                                        updatedProfile[0] = {
+                                          ...updatedProfile[0],
+                                          password: e.target.value, // Update the password field
+                                        };
 
-                                      return updatedProfile; // Return the updated array
-                                    });
-                                  }}
-                                />
+                                        return updatedProfile; // Return the updated array
+                                      });
+                                    }}
+                                  />
+                                </div>
+                                {errors.password && (
+                                  <div className="text-red-500 text-sm mt-1">
+                                    {errors.password}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="grid grid-cols-2">
@@ -382,6 +490,11 @@ const Profile: React.FC = () => {
                                     }}
                                   />
                                 </div>
+                                {errors.firstname && (
+                                  <div className="text-red-500 text-sm mt-1">
+                                    {errors.firstname}
+                                  </div>
+                                )}
                               </div>
                               <div className="flex flex-col">
                                 <div className="pl-2 text-start">last name</div>
@@ -409,6 +522,11 @@ const Profile: React.FC = () => {
                                     }}
                                   />
                                 </div>
+                                {errors.lastname && (
+                                  <div className="text-red-500 text-sm mt-1">
+                                    {errors.lastname}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div className="flex flex-col">
@@ -437,6 +555,11 @@ const Profile: React.FC = () => {
                                   }}
                                 />
                               </div>
+                              {errors.phone && (
+                                <div className="text-red-500 text-sm mt-1">
+                                  {errors.phone}
+                                </div>
+                              )}
                             </div>
                             <div className="flex flex-col">
                               <div className="p-2 text-start">บทบาท</div>
@@ -470,6 +593,11 @@ const Profile: React.FC = () => {
                                   <option value="อสม">อสม</option>
                                 </select>
                               </div>
+                              {errors.rolename && (
+                                <div className="text-red-500 text-sm mt-1">
+                                  {errors.rolename}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </>
